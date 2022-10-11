@@ -7,22 +7,22 @@ invisible(lapply(c('ggplot2','gridExtra','splines','car','gvlma','mice','miceadd
                  require, character.only = T));
 
 # Load mids object
-if (exists("smri") == F) { 
+if (exists('genrpath') == F) { 
   # Define path
   genrpath <- dirname(file.choose()) # project folder
   # Load imputed datasets
-  mriset <- readRDS(file.path(genrpath,'results','imputation_list_smri.rds'))
-  dtiset <- readRDS(file.path(genrpath,'results','imputation_list_dti.rds'))
-  # Transform into mids
-  imp_smri <- miceadds::datlist2mids(mriset)
-  imp_dti <- miceadds::datlist2mids(dtiset)
+  fulset <- readRDS(file.path(genrpath,'results','imputation_list_allimp.rds'))
+  # mriset <- readRDS(file.path(genrpath,'results','imputation_list_smri.rds'))
+  # dtiset <- readRDS(file.path(genrpath,'results','imputation_list_dti.rds'))
   # extract original sets (with missing data)
-  smri <- mice::complete(imp_smri, action = 0)
-  dti  <- mice::complete(imp_dti, action = 0)
+  full <- mice::complete(fulset, action = 20)
+  # smri <- mice::complete(mriset, action = 20)
+  # dti  <- mice::complete(dtiset, action = 20)
   # clean up
-  rm(mriset,dtiset,imp_smri,imp_dti)
+  
+  # rm(fulset,mriset,dtiset)
   # try excluding outlier
-  smri <- smri[-903,]
+  # smri <- smri[-903,]
 }
 
 
@@ -31,8 +31,8 @@ outcomes = paste0(c('tbv','gmv','mfa','mmd'),'_13_z')
 exposures = paste0(c('imt','dis','sbp','dbp'),'_9_z')
 
 # Define covariates
-covs1 <- ' + sex + age_13 + height_9 + ethnicity_dich'
-covs2 <- ' + bmi_9_z + m_educ_6 + m_age'
+covs1 <- ' + sex + age_13 + height_9'
+covs2 <- '+ ethnicity_dich + bmi_9_z + m_educ_cont + m_age'
 
 # Quickly fit the lm() with relevant variables 
 form <- function(outc, exp, data, adj='full') {
@@ -43,7 +43,7 @@ form <- function(outc, exp, data, adj='full') {
 }
 
 # Save output to txt log file 
-sink(paste0('Diagnostic_output_',Sys.Date(),'.txt'))
+sink(paste0('regQC/Diagnostic_output_',Sys.Date(),'.txt'))
 
 # ==============================================================================
 # Remember that distinct problems can interact: if the errors have a skewed distribution, 
@@ -53,12 +53,13 @@ sink(paste0('Diagnostic_output_',Sys.Date(),'.txt'))
 # with the rest of the data.
 # ==============================================================================
 
-pdf(paste0('Diagnostic_plots_',Sys.Date(),'.pdf'))
+pdf(paste0('results/regQC/Diagnostic_plots_',Sys.Date(),'.pdf'))
 for (e in exposures) {
   for (o in outcomes) {
-    if (any(sapply(c('gmv','tbv'), grepl, o))) { data <- smri 
-    } else if (any(sapply(c('fa','md'), grepl, o, ignore.case=T))) { data <- dti } 
-    
+    # if (any(sapply(c('gmv','tbv'), grepl, o))) { data <- smri 
+    # } else if (any(sapply(c('fa','md'), grepl, o, ignore.case=T))) { data <- dti } 
+    data <- full
+     
     fit <- form(o, e, data)
     title = paste(toupper(substr(e,1,3)),'~',toupper(substr(o,1,3)))
     cat('\n====',title,'===================================================\n')
@@ -101,12 +102,13 @@ cat('\n=============================================================
      \n===================== NON LINEARITY =========================
      \n=============================================================\n')
 test_nlin <- function(method){
-  pdf(paste0('nlin_graph_',method,'_',Sys.Date(),'.pdf'), width=25, height=5)
+  pdf(paste0('results/regQC/nlin_graph_',method,'_',Sys.Date(),'.pdf'), width=25, height=5)
   for (e in exposures) {
     for (o in outcomes) {
       # Define datasets
-      if (any(sapply(c('gmv','tbv'), grepl, o))) { data <- smri 
-      } else if (any(sapply(c('fa','md'), grepl, o, ignore.case=T))) { data <- dti } 
+      # if (any(sapply(c('gmv','tbv'), grepl, o))) { data <- smri 
+      # } else if (any(sapply(c('fa','md'), grepl, o, ignore.case=T))) { data <- dti } 
+      data <- full
       # fit standard (linear) model
       fit <- form(o, e, data)
       

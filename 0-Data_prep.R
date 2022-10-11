@@ -162,7 +162,6 @@ clean_brain <- function(set) {
                         data[,paste0('mri_inc_find',age)]!='include' | 
                         is.na(data[,paste0(scan,'scantype',age)]) | 
                         data[,paste0(scan,'qc',age)]!='usable', NA, data[,im])
-    
     # cat(im, ' - ', nrow(data[!is.na(data[,im]),]), '\n')
   }
   return(data)
@@ -252,15 +251,21 @@ dti <- dti[!is.na(dti$mfa_13),]; nrow(dti)
 include_mri <- mri$IDC
 include_dti <- dti$IDC
 
-# select sample for cross-sectional analyses -----------------------------------
-mri_long <- apply_selection('t1', age='9', start = mri)
-dti_long <- apply_selection('dti',age='9', start = dti)
+# select sample for fully imputed set ------------------------------------------
+notwins <- chop(data,'twin',`==`,'No')
+fullsmp <- chop(notwins,'IDC',`%notin%`,select_sibling(notwins, column_selection=c(exposures,outcomes,outcomes_9))) 
 
-# Get rid of additional missing in dti 
-dti_long <- dti_long[!is.na(dti_long$mfa_9),]; nrow(dti_long)
-# Save list of selected IDs for later selection
-include_mri_long <- mri_long$IDC
-include_dti_long <- dti_long$IDC
+include_full <- fullsmp$IDC
+
+# select sample for cross-sectional analyses -----------------------------------
+# mri_long <- apply_selection('t1', age='9', start = mri)
+# dti_long <- apply_selection('dti',age='9', start = dti)
+# 
+# # Get rid of additional missing in dti 
+# dti_long <- dti_long[!is.na(dti_long$mfa_9),]; nrow(dti_long)
+# # Save list of selected IDs for later selection
+# include_mri_long <- mri_long$IDC
+# include_dti_long <- dti_long$IDC
 
 # ------------------------------------------------------------------------------
 
@@ -268,8 +273,8 @@ include_dti_long <- dti_long$IDC
 miss <- data.frame('miss_full' = paste0(colSums(is.na(data)),' (',round((colSums(is.na(data))/nrow(data))*100, 1), '%)'),
                  'miss_mri_13' = paste0(colSums(is.na(mri)),' (',round((colSums(is.na(mri))/nrow(mri))*100, 1), '%)'),
                  'miss_dti_13' = paste0(colSums(is.na(dti)),' (',round((colSums(is.na(dti))/nrow(dti))*100, 1), '%)'),
-               'miss_mri_9&13' = paste0(colSums(is.na(mri_long)),' (',round((colSums(is.na(mri_long))/nrow(mri_long))*100, 1), '%)'),
-               'miss_dti_9&13' = paste0(colSums(is.na(dti_long)),' (',round((colSums(is.na(dti_long))/nrow(dti_long))*100, 1), '%)'),
+              # 'miss_mri_9&13' = paste0(colSums(is.na(mri_long)),' (',round((colSums(is.na(mri_long))/nrow(mri_long))*100, 1), '%)'),
+              # 'miss_dti_9&13' = paste0(colSums(is.na(dti_long)),' (',round((colSums(is.na(dti_long))/nrow(dti_long))*100, 1), '%)'),
                     row.names = names(data))
 # View(miss)
 write.csv(miss, file.path(respath, 'MissPattern.csv'))
@@ -357,7 +362,8 @@ imp_rf <- mice(data, method = meth, m = 20, maxit = 40, ntree = 100)
 
 # Add dichotomized ethnicity 
 long.impdata <- complete(imp_rf, 'long', include = TRUE) %>%
-  mutate(ethnicity_dich = if_else(ethnicity %in% c('dutch','european_descent'), 0, 1))
+  mutate(ethnicity_dich = if_else(ethnicity %in% c('dutch','european_descent'), 0, 1)) %>%
+  mutate(m_educ_cont = as.numeric(m_educ_6))
 # Convert back to mids
 imp_rf <- as.mids(long.impdata)
 
@@ -376,11 +382,13 @@ postprocess <- function(inclusion, filename) {
   return(sampimp)
 }
 
+fullset <- postprocess(include_full, 'imputation_list_allimp.rds')
+
 mriset <- postprocess(include_mri, 'imputation_list_smri.rds')
 dtiset <- postprocess(include_dti, 'imputation_list_dti.rds')
 
-mriset_long <- postprocess(include_mri_long, 'imputation_list_smri_long.rds')
-dtiset_long <- postprocess(include_dti_long, 'imputation_list_dti_long.rds')
+# mriset_long <- postprocess(include_mri_long, 'imputation_list_smri_long.rds')
+# dtiset_long <- postprocess(include_dti_long, 'imputation_list_dti_long.rds')
 
 # Save list of datasets to use as input for QDECR ------------------------------
 

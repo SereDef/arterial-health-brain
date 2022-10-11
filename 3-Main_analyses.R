@@ -6,20 +6,18 @@
 invisible(lapply(c('mice','miceadds','splines','effects','openxlsx'), require, character.only = T));
 
 # Load mids object
-if (exists("imp_smri") == F) { 
+if (exists("genrpath") == F) { 
   # Define path
   genrpath <- dirname(file.choose()) # project folder
   # Load imputed datasets
+  fulset <- readRDS(file.path(genrpath,'results','imputation_list_allimp.rds'))
   mriset <- readRDS(file.path(genrpath,'results','imputation_list_smri.rds'))
   dtiset <- readRDS(file.path(genrpath,'results','imputation_list_dti.rds'))
-  # Transform into mids
-  imp_smri <- miceadds::datlist2mids(mriset)
-  imp_dti <- miceadds::datlist2mids(dtiset)
   # Exclude one outlier
-  imp_smri <- miceadds::subset_datlist(imp_smri, 
-              subset = imp_smri$data$IDC != imp_smri$data$IDC[903],  toclass = 'mids') 
+  # imp_smri <- miceadds::subset_datlist(imp_smri, 
+  #             subset = imp_smri$data$IDC != imp_smri$data$IDC[903],  toclass = 'mids') 
   # clean up
-  rm(mriset,dtiset)
+  # rm(mriset,dtiset)
 }
 
 # ------------------------------------------------------------------------------
@@ -36,35 +34,36 @@ tracts <- c('cgc','cst','unc','ilf','slf','fma','fmi')
 trcts_FA <- paste(tracts,'FA','z', sep='_'); trcts_MD <- paste(tracts,'MD','z', sep='_')    
 names(trcts_FA) <- paste(tr_names,'(FA)'); names(trcts_MD) <- paste(tr_names,'(MD)'); 
 # ------------------------------------------------------------------------------
-pool_mod <- function(outc, exp, sex='') {
+pool_mod <- function(outc, exp, sex='', fullsample=F) {
   # some basic values
-  sex_cov <- '+ sex'
+  sex_cov <- '+ sex'; tiv_cov <- ''
   exp_name <- toupper(substr(outc,1,3))
   
   # Define the correct sample
-  if (any(sapply(c('tbv','gmv',subc_vol), grepl, outc))) { 
-    if (sex=='') { impset <- imp_smri } else { 
-      impset <- miceadds::subset_datlist(imp_smri, subset = imp_smri$data$sex == sex,  toclass = 'mids') 
-      sex_cov <- ''}
-  } else if (any(sapply(c('FA','MD'), grepl, outc, ignore.case=T))) { 
-    if (sex=='') { impset <- imp_dti } else { 
-      impset <- miceadds::subset_datlist(imp_dti, subset = imp_dti$data$sex == sex,  toclass = 'mids') 
-      sex_cov <- '' }
-  }
+  if (fullsample==T) { impset <- fulset 
+  } else if (any(sapply(c('tbv','gmv',subc_vol), grepl, outc))) { impset <- mriset
+  } else if (any(sapply(c('FA','MD'), grepl, outc, ignore.case=T))) { impset <- dtiset }
+  
+  # Stratify by sex
+  if (sex!='') { 
+    # this doesn't work in mriset males (Error in Ops.factor(left, right) : level sets of factors are different)
+    # impset <- miceadds::subset_datlist(impset, subset = impset$data$sex == sex,  toclass = 'mids') 
+    l <- complete(impset, 'long', include = T)
+    s <- subset(subset(l, l$sex==sex))
+    impset <- as.mids(s)
+    sex_cov <- '' }
   
   # Add total intracranial volume to covariates for subcortical outcomes
-  if (outc %in% c(subc_vol,trcts_FA,trcts_MD)) { 
-    tiv_cov <- '+ tiv_13'
-  } else { tiv_cov <- '' }
-  
+  if (outc %in% c(subc_vol,trcts_FA,trcts_MD)) { tiv_cov <- '+ tiv_13' }
+
   # Specify the names of the supplementary outcomes 
   if (outc %in% subc_vol) { exp_name <- names(subc_vol)[which(subc_vol==outc)] 
   } else if (outc %in% trcts_FA) { exp_name <- names(trcts_FA)[which(trcts_FA==outc)] 
   } else if (outc %in% trcts_MD) { exp_name <- names(trcts_MD)[which(trcts_MD==outc)]  }
   
   # Define covariates
-  covs1 <- paste(sex_cov,'+ age_13 + height_9 + ethnicity_dich',tiv_cov)
-  covs2 <- '+ bmi_9_z + m_educ_6 + m_age'
+  covs1 <- paste(sex_cov,'+ age_13 + height_9',tiv_cov)
+  covs2 <- '+ ethnicity_dich + bmi_9_z + m_educ_cont + m_age'
   
   # Fit model and pool estimates
   pool_fit <- function(adj) {
@@ -74,11 +73,12 @@ pool_mod <- function(outc, exp, sex='') {
       fit <- with(impset, lm(as.formula(paste(outc,'~',exp,covs1,covs2))))
     }
     p_fit <- mice::pool(fit) # pool results 
-    mod <- summary(p_fit) # extract relevant information
+    mod <- summary(p_fit, 'all', conf.int = 0.95) # extract relevant information
     
     # Add confidence intervals
-    mod$lci <- (mod$estimate - 1.96*mod$std.error)
-    mod$uci <- (mod$estimate + 1.96*mod$std.error)
+    names(mod)[which(names(mod) %in% c('2.5 %','97.5 %'))] <- c('lci','uci')
+    #mod$lci <- (mod$estimate - 1.96*mod$std.error)
+    #mod$uci <- (mod$estimate + 1.96*mod$std.error)
     # Add R squarred
     mod$rsq <- c(pool.r.squared(fit)[1], rep(NA, nrow(mod)-1)) # add a column for R2
     mod$rsq_adj <- c(pool.r.squared(fit, adjusted = T)[1], rep(NA, nrow(mod)-1)) # adjusted R2
@@ -104,9 +104,9 @@ pool_mod <- function(outc, exp, sex='') {
 
 # ------------------------------------------------------------------------------
 # for each exposure loop through outcomes and pool models, also add proper FDR calculation
-exp_mod <- function(exp, outcomes = c('tbv_13_z', 'gmv_13_z', 'mfa_13_z', 'mmd_13_z'), sex='') {
+exp_mod <- function(exp, outcomes = c('tbv_13_z', 'gmv_13_z', 'mfa_13_z', 'mmd_13_z'), sex='', fullsample=F) {
   mod <- data.frame()
-  for (out in outcomes) { p <- pool_mod(out, exp, sex=sex) 
+  for (out in outcomes) { p <- pool_mod(out, exp, sex=sex, fullsample=fullsample) 
                           mod <- rbind(mod, p) }
   # Calculate FDR per predictor
   mod[,'FDR'] <- NA
@@ -121,6 +121,12 @@ exp_mod <- function(exp, outcomes = c('tbv_13_z', 'gmv_13_z', 'mfa_13_z', 'mmd_1
   # add a column to highlight significant terms
   mod[,'sign_raw'] <- ifelse(mod[,'p.value'] < 0.05, '*', '') 
   mod[,'sign_fdr'] <- ifelse(mod[,'FDR'] < 0.05, '*', '')
+  
+  col_order <- c('model','term','estimate','std.error','statistic','df','p.value','FDR',
+                 'sign_raw','sign_fdr','lci','uci','rsq','rsq_adj',
+                 'm','riv','lambda','fmi','ubar','b','t','dfcom')
+  mod <- mod[, col_order]
+  
   return(mod)
 }
 
@@ -141,6 +147,8 @@ for (e in c('imt','dis','sbp','dbp')) {
   assign(paste0(e,'_unscaled'), 
          exp_mod(paste0(e,'_9'), 
                  paste0(c('tbv', 'gmv', 'mfa', 'mmd'),'_13')))
+  # full sample 
+  assign(paste0(e,'_fullsamp'), exp_mod(paste0(e,'_9_z'), fullsample = T))
 }
 
 # INTERACTION
@@ -153,7 +161,9 @@ inter <- rbind(sbp_inter, dbp_inter)
 
 main_modls <- list("IMT" = imt, "Dis" = dis, "SBP" = sbp, "DBP" = dbp, 
                    "IMT_orig" = imt_unscaled, "Dis_orig" = dis_unscaled, 
-                   "SBP_orig" = sbp_unscaled, "DBP_orig" = dbp_unscaled)
+                   "SBP_orig" = sbp_unscaled, "DBP_orig" = dbp_unscaled,
+                   "IMT_full" = imt_fullsamp, "Dis_full" = dis_fullsamp, 
+                   "SBP_full" = sbp_fullsamp, "DBP_full" = dbp_fullsamp)
 
 openxlsx::write.xlsx(main_modls, file = file.path(genrpath,'results',
                                              paste0(Sys.Date(), "_Results.xlsx")), overwrite = T)

@@ -11,14 +11,6 @@ genrpath <- dirname(file.choose()) # project folder
 # FULL SAMPLE (NO SELCTION, NO IMPUTATION ) ====================================
 if (exists('orig_data')==F) { orig_data <- read.csv(file.path(genrpath,'DATA','Data.csv'), stringsAsFactors=T)[,-1]}
 
-# TODO: Fix maternal education as categorical 
-add_educ <- function(dset) {
-  edu <- as.factor(dset[,'m_educ_6'])
-  levels(edu) <- c('no education','primary','secondary1','secondary2','higher1','higher2')
-  return(edu)
-}
-orig_data$m_edu_cat <- add_educ(orig_data)
-
 summdf <- function(dataframe, bysex=F) {
   # take summary object, clean the strings and note them as row.names, return a data.frame
   # with columns:
@@ -44,20 +36,17 @@ summ_orig <- summdf(orig_data)
 
 # FULL AND SELECTED SAMPLE (AFTER IMPUTATION ) =================================
 
-describe <- function(imp_file, cat_vars = c('sex','ethnicity','m_educ_cat')) {
+describe <- function(imp_file, cat_vars = c('sex','ethnicity','m_educ_6','twin','m_educ_3','m_educ_pregn')) {
   # Load imputed list object
-  datalist <- readRDS(file.path(genrpath,'results',imp_file))
-  imput <- miceadds::datlist2mids(datalist)
+  imput <- readRDS(file.path(genrpath,'results',imp_file))
   
   # Extract the original set (with NAs)
   sample <- complete(imput, 0) 
-  sample$m_edu_cat <- add_educ(sample) # TODO: Fix maternal education as categorical 
   # Summary of sample before imputation
   summ_sample <- summdf(sample)
   
   # Stack imputed datasets in long format, excluding the original data
   impdat <- complete(imput, action="long", include = F)
-  impdat$m_educ_cat <- add_educ(impdat) # TODO: Fix maternal education as categorical 
   
   pool_descriptives <- function(implist, column_names, categorical=T) {
     summ <- with(implist, by(implist, .imp, function(x) summary(x[, -c(1, 2)],digits=4))) 
@@ -114,12 +103,13 @@ describe <- function(imp_file, cat_vars = c('sex','ethnicity','m_educ_cat')) {
   return(stats)
 }
 
+full <- describe('imputation_list_allimp.rds')
 smri <- describe('imputation_list_smri.rds')
 dti  <- describe('imputation_list_dti.rds')
 
 # Stack them together and export to xlsx file ==================================
 
-stats <- c(list('s_full'=summ_orig), smri, dti)
+stats <- c(list('s_full'=summ_orig), full, smri, dti)
 
 # Export summary statistics into an xlsx file with one summary per sheet
 openxlsx::write.xlsx(stats, file = file.path(genrpath,'results',paste0(Sys.Date(),"_Descriptives.xlsx")), 
