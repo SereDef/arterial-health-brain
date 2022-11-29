@@ -93,23 +93,23 @@ describe <- function(imp_file, cat_vars = c('sex','ethnicity','m_educ_6','twin',
                                                                      c('.imp','.id','IDC',cat_vars)]) 
   
   # Export the outputs of summary statistics into an xlsx file with one model per sheet
-  stats <- list('s_orig' = summ_sample, 's_imp_cnt' = cnt_summ, 's_imp_cat' = cat_summ, 
+  stats <- list('s_pre_imp' = summ_sample, 's_imp_cnt' = cnt_summ, 's_imp_cat' = cat_summ, 
                 's_imp_boy' = boy_summ, 's_imp_grl' = grl_summ, 'cor_imp' = cors_imp)
   
   # Adjust names
-  s <- strsplit(strsplit(imp_file,'list')[[1]][2], '\\.')[[1]][1] # get sample name 
+  s <- strsplit(strsplit(imp_file,'imp')[[1]][2], '\\.')[[1]][1] # get sample name 
   names(stats) <- paste0(names(stats), s)
   
   return(stats)
 }
 
-full <- describe('imputation_list_allimp.rds')
-smri <- describe('imputation_list_smri.rds')
-dti  <- describe('imputation_list_dti.rds')
+full <- describe('imp_full.rds')
+smri <- describe('imp_smri.rds')
+dti  <- describe('imp_dti.rds')
 
 # Stack them together and export to xlsx file ==================================
 
-stats <- c(list('s_full'=summ_orig), full, smri, dti)
+stats <- c(list('s_orig'=summ_orig), full, smri, dti)
 
 # Export summary statistics into an xlsx file with one summary per sheet
 openxlsx::write.xlsx(stats, file = file.path(genrpath,'results',paste0(Sys.Date(),"_Descriptives.xlsx")), 

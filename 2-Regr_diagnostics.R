@@ -11,9 +11,9 @@ if (exists('genrpath') == F) {
   # Define path
   genrpath <- dirname(file.choose()) # project folder
   # Load imputed datasets
-  fulset <- readRDS(file.path(genrpath,'results','imputation_list_allimp.rds'))
-  # mriset <- readRDS(file.path(genrpath,'results','imputation_list_smri.rds'))
-  # dtiset <- readRDS(file.path(genrpath,'results','imputation_list_dti.rds'))
+  fulset <- readRDS(file.path(genrpath,'results','imp_full.rds'))
+  # mriset <- readRDS(file.path(genrpath,'results','imp_smri.rds'))
+  # dtiset <- readRDS(file.path(genrpath,'results','imp_dti.rds'))
   # extract original sets (with missing data)
   full <- mice::complete(fulset, action = 20)
   # smri <- mice::complete(mriset, action = 20)
@@ -23,6 +23,11 @@ if (exists('genrpath') == F) {
   # rm(fulset,mriset,dtiset)
   # try excluding outlier
   # smri <- smri[-903,]
+}
+
+for (i in 1:20) {
+  d <- mice::complete(fulset, action = i)
+  write.csv(d, file.path(genrpath, 'results/df_by_imp', paste0('Data_imp',i,'.csv')))
 }
 
 
@@ -43,7 +48,7 @@ form <- function(outc, exp, data, adj='full') {
 }
 
 # Save output to txt log file 
-sink(paste0('regQC/Diagnostic_output_',Sys.Date(),'.txt'))
+sink(file.path(genrpath,'results','regQC',paste0('Diagnostic_output_',Sys.Date(),'.txt')))
 
 # ==============================================================================
 # Remember that distinct problems can interact: if the errors have a skewed distribution, 
@@ -53,7 +58,7 @@ sink(paste0('regQC/Diagnostic_output_',Sys.Date(),'.txt'))
 # with the rest of the data.
 # ==============================================================================
 
-pdf(paste0('results/regQC/Diagnostic_plots_',Sys.Date(),'.pdf'))
+pdf(file.path(genrpath,'results','regQC',paste0('Diagnostic_plots_',Sys.Date(),'.pdf')))
 for (e in exposures) {
   for (o in outcomes) {
     # if (any(sapply(c('gmv','tbv'), grepl, o))) { data <- smri 
@@ -102,7 +107,7 @@ cat('\n=============================================================
      \n===================== NON LINEARITY =========================
      \n=============================================================\n')
 test_nlin <- function(method){
-  pdf(paste0('results/regQC/nlin_graph_',method,'_',Sys.Date(),'.pdf'), width=25, height=5)
+  pdf(file.path(genrpath,'results','regQC',paste0('nlin_graph_',method,'_',Sys.Date(),'.pdf')), width=25, height=5)
   for (e in exposures) {
     for (o in outcomes) {
       # Define datasets
@@ -163,3 +168,4 @@ sink()
 
 # Evaluate the interaction between stress periods for each model
 # intern.int  <- update( intern,  . ~ . + prenatal_stress_z:postnatal_stress_z)
+# ==============================================================================

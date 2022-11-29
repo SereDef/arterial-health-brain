@@ -6,7 +6,7 @@
 invisible(lapply(c('foreign','dplyr','mice','miceadds'), require, character.only = T));
 
 # Define paths 
-genrpath <- dirname(file.choose())
+genrpath <- dirname(file.choose()) # <== choose project folder
 datapath <- file.path(genrpath,'DATA') # data folder
 respath  <- file.path(genrpath,'results') # results folder
 
@@ -43,7 +43,7 @@ dataset <- Reduce(function(x,y) merge(x = x, y = y, by = 'IDC', all.x = T),
 rm(gen, bp5, bp9, dis, imt, bmi5, bmi9, bmi13, brain)
 
 # Select only children alive at birth 
-dataset <- dataset[dataset$OUTCOMECHILD=='live birth',]
+dataset <- dataset[!is.na(dataset$GENDER) & dataset$OUTCOMECHILD=='live birth',]
 
 # Select and transform needed variables 
 data <- data.frame('IDC' = dataset$IDC, 
@@ -153,7 +153,6 @@ selection  <- c('mri_consent_13', 'mri_braces_13', 'mri_inc_find_13', 't1_scanty
 # ==============================================================================
 # create clean brain variables for imputation
 clean_brain <- function(set) {
-  age =  # = _13 or _9
   if (substring(set[1],1,3)=='tbv') { scan = 't1_' } else { scan = 'dti_'}
   for (im in set) {
     if (substring(im, nchar(im)-1)=='_9') { age = '_9'} else { age = '_13'}
@@ -270,20 +269,19 @@ include_full <- fullsmp$IDC
 # ------------------------------------------------------------------------------
 
 # Calculate the percentage missing data ----------------------------------------
-miss <- data.frame('miss_full' = paste0(colSums(is.na(data)),' (',round((colSums(is.na(data))/nrow(data))*100, 1), '%)'),
+miss <- data.frame('miss_full' = paste0(colSums(is.na(fullsmp)),' (',round((colSums(is.na(fullsmp))/nrow(fullsmp))*100, 1), '%)'),
                  'miss_mri_13' = paste0(colSums(is.na(mri)),' (',round((colSums(is.na(mri))/nrow(mri))*100, 1), '%)'),
                  'miss_dti_13' = paste0(colSums(is.na(dti)),' (',round((colSums(is.na(dti))/nrow(dti))*100, 1), '%)'),
-              # 'miss_mri_9&13' = paste0(colSums(is.na(mri_long)),' (',round((colSums(is.na(mri_long))/nrow(mri_long))*100, 1), '%)'),
-              # 'miss_dti_9&13' = paste0(colSums(is.na(dti_long)),' (',round((colSums(is.na(dti_long))/nrow(dti_long))*100, 1), '%)'),
-                    row.names = names(data))
+                     row.names = names(data))
 # View(miss)
 write.csv(miss, file.path(respath, 'MissPattern.csv'))
 
 # Create correlation matrix (full sample) --------------------------------------
 data <- data[ , -which(names(data) %in% selection)] # get rid of selection variables 
 
-c <- round(cor(data[,-which(names(data) %in% c('sex','ethnicity','twin', # binary and categorical
-                                               'm_educ_pregn','m_educ_3','m_educ_6'))], 
+c <- round(cor(fullsmp[,-which(names(fullsmp) %in% c('IDC', selection, # binary and categorical
+                                                     'sex','ethnicity','twin',
+                                                     'm_educ_pregn','m_educ_3','m_educ_6'))], 
                use='complete.obs'), 2)
 write.csv(c, file.path(respath,'CorrMatrix.csv'))
 
@@ -293,7 +291,7 @@ write.csv(c, file.path(respath,'CorrMatrix.csv'))
 meth <- make.method(data, defaultMethod = c("rf", "logreg", "polyreg"))
 
 # Random fortest imputation 
-imp_rf <- mice(data, method = meth, m = 20, maxit = 40, ntree = 100) 
+imp_rf <- mice(data, method = meth, m = 20, maxit = 40, ntree = 10) 
 
 # IMPUTATION (old method) ======================================================
 # # RF single dataset ------------------------------------------------------------
@@ -368,7 +366,7 @@ long.impdata <- complete(imp_rf, 'long', include = TRUE) %>%
 imp_rf <- as.mids(long.impdata)
 
 # Save
-saveRDS(imp_rf, file.path(respath,'imputation_list_full.rds'))
+saveRDS(imp_rf, file.path(respath,'imp_orig.rds'))
 
 postprocess <- function(inclusion, filename) {
   # Subset
@@ -382,13 +380,10 @@ postprocess <- function(inclusion, filename) {
   return(sampimp)
 }
 
-fullset <- postprocess(include_full, 'imputation_list_allimp.rds')
+fullset <- postprocess(include_full, 'imp_full.rds')
 
-mriset <- postprocess(include_mri, 'imputation_list_smri.rds')
-dtiset <- postprocess(include_dti, 'imputation_list_dti.rds')
-
-# mriset_long <- postprocess(include_mri_long, 'imputation_list_smri_long.rds')
-# dtiset_long <- postprocess(include_dti_long, 'imputation_list_dti_long.rds')
+mriset <- postprocess(include_mri, 'imp_smri.rds')
+dtiset <- postprocess(include_dti, 'imp_dti.rds')
 
 # Save list of datasets to use as input for QDECR ------------------------------
 
@@ -406,7 +401,7 @@ saveRDS(dl, file.path(respath,'implist_qdecr.rds'))
 # dev.off()
 
 # for (var in colnames(data)) { cat(paste('densityplot(imp_rf, ~', var, ')', '\n')) }
-pdf(file.path(respath,'impQC', 'imp-vs-obs-full_RF100.pdf'))
+pdf(file.path(respath,'impQC', 'imp-vs-obs-full_RF10.pdf'))
 densityplot(imp_rf, ~ imt_9 ) 
 densityplot(imp_rf, ~ dis_9 ) 
 densityplot(imp_rf, ~ sbp_9 ) 
@@ -415,13 +410,11 @@ densityplot(imp_rf, ~ tbv_13 )
 densityplot(imp_rf, ~ gmv_13 ) 
 densityplot(imp_rf, ~ mfa_13 ) 
 densityplot(imp_rf, ~ mmd_13 ) 
-densityplot(imp_rf, ~ sex ) 
 densityplot(imp_rf, ~ age_13 ) 
 densityplot(imp_rf, ~ height_9 ) 
 densityplot(imp_rf, ~ ethnicity ) 
 densityplot(imp_rf, ~ bmi_9_z ) 
 densityplot(imp_rf, ~ m_educ_6 ) 
-densityplot(imp_rf, ~ m_age ) 
 densityplot(imp_rf, ~ tiv_13 ) 
 densityplot(imp_rf, ~ accumbens ) 
 densityplot(imp_rf, ~ amygdala ) 
@@ -471,7 +464,7 @@ densityplot(imp_rf, ~ m_educ_3 )
 densityplot(imp_rf, ~ age_9 ) 
 dev.off()
 
-pdf(file.path(respath,'impQC', 'imp-vs-obs-smri_RF100.pdf'))
+pdf(file.path(respath,'impQC', 'imp-vs-obs-smri_RF10.pdf'))
 densityplot(mriset, ~ imt_9 ) 
 densityplot(mriset, ~ dis_9 ) 
 densityplot(mriset, ~ sbp_9 ) 
@@ -520,7 +513,7 @@ densityplot(mriset, ~ m_educ_3 )
 densityplot(mriset, ~ age_9 ) 
 dev.off()
 
-pdf(file.path(respath,'impQC', 'imp-vs-obs-dti_RF100.pdf'))
+pdf(file.path(respath,'impQC', 'imp-vs-obs-dti_RF10.pdf'))
 densityplot(dtiset, ~ imt_9 ) 
 densityplot(dtiset, ~ dis_9 ) 
 densityplot(dtiset, ~ sbp_9 ) 
@@ -567,7 +560,7 @@ densityplot(dtiset, ~ age_9 )
 dev.off()
 
 # for (var in colnames(data)) { cat(paste('stripplot(imp_rf,', var, '~ .imp)', '\n')) }
-pdf(file.path(respath,'impQC', 'stripplot_RF100.pdf'))
+pdf(file.path(respath,'impQC', 'stripplot_RF10.pdf'))
 stripplot(imp_rf, imt_9 ~ .imp) 
 stripplot(imp_rf, dis_9 ~ .imp) 
 stripplot(imp_rf, sbp_9 ~ .imp) 
