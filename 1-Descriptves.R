@@ -5,19 +5,24 @@
 # Required packages
 invisible(lapply(c('mice','miceadds','openxlsx'), require, character.only = T));
 
-# Define path
-genrpath <- dirname(file.choose()) # project folder
+# date <- format(Sys.Date(), "%d%m%y")
+date <- '240523'
+
+# Define paths 
+genrpath <- dirname(file.choose()) # <== choose project folder
+datapath <- file.path(genrpath,'DATA') # data folder
+respath  <- file.path(genrpath, paste0('results_',date)) # results folder
 
 # FULL SAMPLE (NO SELCTION, NO IMPUTATION ) ====================================
-if (exists('orig_data')==F) { orig_data <- read.csv(file.path(genrpath,'DATA','Data.csv'), stringsAsFactors=T)[,-1]}
+if (exists('orig_data')==F) { orig_data <- read.csv(file.path(datapath,'Data.csv'), stringsAsFactors=T)[,-1]}
 
-summdf <- function(dataframe, bysex=F) {
+summdf <- function(dataframe) {
   # take summary object, clean the strings and note them as row.names, return a data.frame
   # with columns:
   nms <- c('Var','Min','1stQ','Median','Mean','3rdQ','Max','NAs','SD')
   # For imputed datasets stratified by sex I input a summary object already and there are no NAs
-  if (bysex==T) { input <- dataframe; n_par <- 6; nms <- nms[nms!='NAs']
-  } else { input <- summary(dataframe,digits=4); n_par <- 7 }
+  input <- summary(dataframe,digits=4); 
+  n_par <- 7
   # Flip the set to have variables as rows and metrics as columns 
   summ <- as.data.frame(input)
   summ[,'Var1'] <- rep(c(1:n_par), nrow(summ)/n_par)
@@ -36,9 +41,16 @@ summ_orig <- summdf(orig_data)
 
 # FULL AND SELECTED SAMPLE (AFTER IMPUTATION ) =================================
 
-describe <- function(imp_file, cat_vars = c('sex','ethnicity','m_educ_6','twin','m_educ_3','m_educ_pregn')) {
+describe <- function(sample_name) {
+  # Construct file name
+  imp_file <- paste0('imp_',sample_name,'_',date,'.rds')
   # Load imputed list object
-  imput <- readRDS(file.path(genrpath,'results',imp_file))
+  imput <- readRDS(file.path(respath, imp_file))
+  
+  # determine categorical and continuous vars 
+  lvl_length <- lapply(imput$data, function(var) length(levels(as.factor(var)))) 
+  # Cutoff 15 levels: consider it categorical
+  cat_vars <- names(which(lvl_length < 20))
   
   # Extract the original set (with NAs)
   sample <- complete(imput, 0) 
@@ -46,7 +58,12 @@ describe <- function(imp_file, cat_vars = c('sex','ethnicity','m_educ_6','twin',
   summ_sample <- summdf(sample)
   
   # Stack imputed datasets in long format, excluding the original data
-  impdat <- complete(imput, action="long", include = F)
+  impdat <- mice::complete(imput, action="long", include = F)
+  
+  # Set to factors or numeric when appropiate
+  impdat[,cat_vars] <- lapply(impdat[,cat_vars] , as.factor)
+  impdat = impdat[,-grep('IDC',names(impdat))] # remove ID from descriptives 
+  impdat[, !names(impdat)%in%cat_vars] <- lapply(impdat[,!names(impdat)%in%cat_vars] , as.numeric)
   
   pool_descriptives <- function(implist, column_names, categorical=T) {
     summ <- with(implist, by(implist, .imp, function(x) summary(x[, -c(1, 2)],digits=4))) 
@@ -79,40 +96,44 @@ describe <- function(imp_file, cat_vars = c('sex','ethnicity','m_educ_6','twin',
   for (v in cat_vars) {
     sel <- impdat[, c('.imp','.id', v)]
     v_summ <- pool_descriptives(sel)
+    v_summ <- cbind(row.names(v_summ), v_summ)
+    v_summ$percent <- (v_summ$count / nrow(imput$data))*100
     cat_summ <- rbind(cat_summ, v, v_summ, NA)
   }
   
   # Descriptives by sex
-  bysex <- by(impdat, impdat$sex, summary, digits = 4)
-  boy_summ <- summdf(bysex[[1]], bysex = T)
-  grl_summ <- summdf(bysex[[2]], bysex = T)
+  bysex <- by(impdat, impdat$sex, summdf)
   
   # Correlation matrix in the imputed set
   cors_imp <- miceadds::micombine.cor(mi.res = impdat, 
                                       variables = colnames(impdat)[!colnames(impdat) %in% 
-                                                                     c('.imp','.id','IDC',cat_vars)]) 
+                                                c('.imp','.id','IDC',cat_vars)]) 
   
-  # Export the outputs of summary statistics into an xlsx file with one model per sheet
-  stats <- list('s_pre_imp' = summ_sample, 's_imp_cnt' = cnt_summ, 's_imp_cat' = cat_summ, 
-                's_imp_boy' = boy_summ, 's_imp_grl' = grl_summ, 'cor_imp' = cors_imp)
+ # Export the outputs of summary statistics into an xlsx file with one model per sheet
+  stats <- list('pre_imp' = summ_sample, 'imp_cnt' = cnt_summ, 'imp_cat' = cat_summ, 
+                'imp_boy' = bysex[['boy']], 'imp_grl' = bysex[['girl']], 
+                'imp_cor' = cors_imp)
   
   # Adjust names
-  s <- strsplit(strsplit(imp_file,'imp')[[1]][2], '\\.')[[1]][1] # get sample name 
-  names(stats) <- paste0(names(stats), s)
+  names(stats) <- paste0(names(stats), sample_name)
   
   return(stats)
 }
 
-full <- describe('imp_full.rds')
-smri <- describe('imp_smri.rds')
-dti  <- describe('imp_dti.rds')
+full <- describe('full')
+bas9 <- describe('base9')
+bas5 <- describe('base5')
+smri <- describe('smri')
+dti  <- describe('dti')
 
 # Stack them together and export to xlsx file ==================================
 
-stats <- c(list('s_orig'=summ_orig), full, smri, dti)
+# list('s_orig'=summ_orig)
+stats <- c(full, bas9, bas5, smri, dti)
 
 # Export summary statistics into an xlsx file with one summary per sheet
-openxlsx::write.xlsx(stats, file = file.path(genrpath,'results',paste0(Sys.Date(),"_Descriptives.xlsx")), 
+openxlsx::write.xlsx(stats, 
+                     file = file.path(respath,paste0('1-Descriptives_',date,'.xlsx')), 
                      rowNames = T, overwrite = T)
 
 # ==============================================================================

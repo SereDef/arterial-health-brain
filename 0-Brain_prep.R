@@ -1,6 +1,11 @@
-library(dplyr)
-library(stringr)
+# ==============================================================================
+# ================= 0. Brain data extraction & cleaning ========================
+# ==============================================================================
 
+# Required packages
+invisible(lapply(c('dplyr','stringr'), require, character.only = T));
+
+# Define path
 genrpath <- '/mnt/data/genr/mrdata/GenR_MRI/summary_data/'
 
 # Core data for selection

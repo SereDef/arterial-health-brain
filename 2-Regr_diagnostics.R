@@ -6,38 +6,36 @@
 invisible(lapply(c('ggplot2','gridExtra','splines','car','gvlma','mice','miceadds'),
                  require, character.only = T));
 
+date <- '240523' #format(Sys.Date(), "%d%m%y")
+
 # Load mids object
 if (exists('genrpath') == F) { 
-  # Define path
-  genrpath <- dirname(file.choose()) # project folder
+  # Define paths
+  genrpath <- dirname(file.choose()) # <== choose project folder
+  respath  <- file.path(genrpath, paste0('results_',date)) # results folder
   # Load imputed datasets
-  fulset <- readRDS(file.path(genrpath,'results','imp_full.rds'))
-  # mriset <- readRDS(file.path(genrpath,'results','imp_smri.rds'))
-  # dtiset <- readRDS(file.path(genrpath,'results','imp_dti.rds'))
+  fulset <- readRDS(file.path(respath, paste0('imp_base9_',date,'.rds')))
   # extract original sets (with missing data)
-  full <- mice::complete(fulset, action = 20)
-  # smri <- mice::complete(mriset, action = 20)
-  # dti  <- mice::complete(dtiset, action = 20)
-  # clean up
+  full <- mice::complete(fulset, action = 0)
   
-  # rm(fulset,mriset,dtiset)
   # try excluding outlier
   # smri <- smri[-903,]
 }
 
-for (i in 1:20) {
-  d <- mice::complete(fulset, action = i)
-  write.csv(d, file.path(genrpath, 'results/df_by_imp', paste0('Data_imp',i,'.csv')))
-}
+# save each dataset separately for Figure 2 (splines)
+# for (i in 0:20) {
+#   d <- mice::complete(fulset, action = i)
+#   write.csv(d, file.path(respath, 'df_by_imp', paste0('Data_imp',i,'.csv')))
+# }
 
 
 # Define main exposures and outcomes
-outcomes = paste0(c('tbv','gmv','mfa','mmd'),'_13_z')
-exposures = paste0(c('imt','dis','sbp','dbp'),'_9_z')
+outcomes  = paste0(c('tbv','gmv','mfa','mmd'),'_13_z')
+exposures = paste0(c('imt','dis','sbp','dbp'),'_10_z')
 
 # Define covariates
-covs1 <- ' + sex + age_13 + height_9'
-covs2 <- '+ ethnicity_dich + bmi_9_z + m_educ_cont + m_age'
+covs1 <- ' + sex + age_mri_13 + height_10'
+covs2 <- '+ ethn_dich + bmi_10_z + m_educ_cont + m_age'
 
 # Quickly fit the lm() with relevant variables 
 form <- function(outc, exp, data, adj='full') {
@@ -47,8 +45,9 @@ form <- function(outc, exp, data, adj='full') {
   return(fit)
 }
 
+dir.create(file.path(respath,'QC-regression'))
 # Save output to txt log file 
-sink(file.path(genrpath,'results','regQC',paste0('Diagnostic_output_',Sys.Date(),'.txt')))
+sink(file.path(respath,'QC-regression',paste0('Diagnostics_',date,'.txt')))
 
 # ==============================================================================
 # Remember that distinct problems can interact: if the errors have a skewed distribution, 
@@ -58,7 +57,7 @@ sink(file.path(genrpath,'results','regQC',paste0('Diagnostic_output_',Sys.Date()
 # with the rest of the data.
 # ==============================================================================
 
-pdf(file.path(genrpath,'results','regQC',paste0('Diagnostic_plots_',Sys.Date(),'.pdf')))
+pdf(file.path(respath,'QC-regression',paste0('Diagnostic_plots_',date,'.pdf')))
 for (e in exposures) {
   for (o in outcomes) {
     # if (any(sapply(c('gmv','tbv'), grepl, o))) { data <- smri 
@@ -81,7 +80,7 @@ for (e in exposures) {
     # Significant p-values indicate lack-of-fit, confirming the nonlinear pattern visible in the graph. 
     # For the plot of residuals vs fitted values, the Tukey’s test for non-additivity is obtained by adding the squares 
     # of the fitted values to the model and refitting. The test confirms the impression of curvature (model is not adequate).
-    car::marginalModelPlots(fit, main = title) # sd=T to check variance assumptions
+    #car::marginalModelPlots(fit, main = title) # sd=T to check variance assumptions
     # A lowess smooth is fit to the data (in blue) and to the fitted values (red dashed)
     # and the two curves should match on each of the plots. Any mismatches are evidence of bad fit.
     cat('\n --- Outliers & Influential observations ------\n')
@@ -107,7 +106,7 @@ cat('\n=============================================================
      \n===================== NON LINEARITY =========================
      \n=============================================================\n')
 test_nlin <- function(method){
-  pdf(file.path(genrpath,'results','regQC',paste0('nlin_graph_',method,'_',Sys.Date(),'.pdf')), width=25, height=5)
+  pdf(file.path(respath,'QC-regression',paste0('Nonlin_graphs_',method,'_',date,'.pdf')), width=25, height=5)
   for (e in exposures) {
     for (o in outcomes) {
       # Define datasets
