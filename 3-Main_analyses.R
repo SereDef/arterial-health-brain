@@ -7,7 +7,7 @@ invisible(lapply(c('mice','miceadds','splines','effects','openxlsx'), require, c
 invisible(lapply(c('broom.mixed','lme4','lmerTest'), require, character.only = T)); # 'jtools','reghelper','nlme'
 
 datedat <- '240523'
-daterun <- format(Sys.Date(), '%d%m%y')
+daterun <- '190923' # datedat # format(Sys.Date(), '%d%m%y')
 
 # Load mids object
 if (exists('genrpath') == F) { 
@@ -42,16 +42,16 @@ trcts_MD <- paste(tracts,'MD','13','z', sep='_'); names(trcts_MD) <- paste(tr_na
 # INSTRUCTIONS =================================================================
 
 samples <- c('base9') # default = c('base9', 'full', 'base5', 'smri', 'dti')
-outcs <- c('main','unscaled','regional','main_10y','other') # default = c('main','unscaled','regional','main_10y','other') 
+outcs <- c('other') # ,'unscaled','regional','main_10y','other') # default = c('main','unscaled','regional','main_10y','other') 
 expos <- c('imt','dis','sbp','dbp') # default = c('imt','dis','sbp','dbp')
 
-NAME_ANALYSIS <- 'all_' # default = ''
+NAME_ANALYSIS <- 'tiv_sex' # default = ''
 supp <- '' # ' + gest_weight + gest_age_birth' # default = ''
 
-sex_interaction <- FALSE # default = T
+sex_interaction <- TRUE # default = T
 BPIMT_interaction <- FALSE # default = T
 longit <- FALSE # default = T
-run_fulladj = T # default = T
+run_fulladj = TRUE # default = T
 
 # ------------------------------------------------------------------------------
 # for each exposure loop through outcomes and pool models, also add proper FDR calculation
@@ -77,14 +77,14 @@ exp_mod <- function(exp, outcomes = c('tbv_13_z', 'gmv_13_z', 'mfa_13_z', 'mmd_1
     } else if (outc %in% trcts_MD) { out_name <- names(trcts_MD)[which(trcts_MD==outc)]  }
     
     # Define covariates
-    covs1 <- paste(sex_cov,'+ age_mri_13 + height_10',tiv_cov)
-    covs2 <- '+ ethn_dich + bmi_10_z + m_educ_cont + m_age'
+    covs1 <- paste(sex_cov,'+ age_mri_13 + age_gap_13 + height_10',tiv_cov)
+    covs2 <- paste0('+ ethn_dich + bmi_10_z + tot_educ_6 + m_age', add_covs)
     
     # Fit model and pool estimates
     pool_fit <- function(adj) {
       if (adj=='base') { covs2 <- '' } # reduce covariates to base only 
       # Fit the model and pool estimates
-      fit <- with(impset, lm(as.formula(paste(outc,'~',exp, covs1, covs2, add_covs))))
+      fit <- with(impset, lm(as.formula(paste(outc,'~',exp, covs1, covs2))))
       p_fit <- mice::pool(fit)
       mod <- summary(p_fit, 'all', conf.int = 0.95) # extract relevant information
       
@@ -131,40 +131,37 @@ exp_mod <- function(exp, outcomes = c('tbv_13_z', 'gmv_13_z', 'mfa_13_z', 'mmd_1
   mod[,'sign_fdr'] <- ifelse(mod[,'FDR'] < 0.05, '*', '')
   
   col_order <- c('model','term','estimate','std.error','statistic','df','p.value','FDR',
-                 'sign_raw','sign_fdr','lci','uci','rsq','rsq_adj',
+                 'lci','uci','rsq','rsq_adj','sign_raw','sign_fdr',
                  'm','riv','lambda','fmi','ubar','b','t','dfcom')
   mod <- mod[, col_order]
   
   return(mod)
 }
 
-# ==============================================================================
-# Save individual datasets for reading in python 
-# for (sample in c('base9', 'full', 'base5', 'smri', 'dti')) {
-#   # Load imputed dataset
-#   imput <- readRDS(file.path(datpath, paste0('imp_',sample,'_',date,'.rds')))
-#   
-#   for (n in 0:20) {
-#     d <- mice::complete(imput, action = n)
-#     dir.create( file.path(datpath, paste0('df.by.imp_',sample)))
-#     write.csv(d, file.path(datpath, paste0('df.by.imp_',sample), paste0('Data_imp',n,'.csv')))
-#   }
-# }
-
 # Let's do this ================================================================
 for (sample in samples) {
   # Load imputed dataset
   imput <- readRDS(file.path(datpath, paste0('imp_',sample,'_',datedat,'.rds')))
+  
+  # RM LATER !!! ===============================================================
+  imput2 =  readRDS(paste0('/Users/Serena/Desktop/arterial brain/results_190923/imp_',sample,'_190923.rds'))
+  il2 = complete(imput2, 'long',include=T)[,c('.imp','.id','IDC','p_educ_cont','ventrix_10','ventrix_13')]
+  
+  l = merge(complete(imput, 'long',include=T), il2, by=c('.imp','.id','IDC'))
+  
+  l$tot_educ_6 = l$m_educ_cont + l$p_educ_cont
+  l$age_gap_13 = l$age_mri_13 - l$age_10
+  
+  imput = as.mids(l)
+  
+  # Standardize
+  mains <- paste0(c('tiv','cortex','subcort','wmv','csf','ventrix'),'_13') # c('gest_weight', 'gest_age_birth')
+  sampz <- miceadds::scale_datlist(miceadds::mids2datlist(imput), orig_var = mains, trafo_var = paste0(mains, '_z'))
+  imput <- miceadds::datlist2mids(sampz)
+  
   # Print out sample size
   cat('\nSample: ',sample,' N =', nrow(imput$data),'\n')
   
-  # Standardize "other" brain measures (did not do it before)
-  if ('other' %in% outcs) {
-    other <- paste0(c('cortex','subcort','wmv','csf'),'_13')
-    sampz <- miceadds::scale_datlist(miceadds::mids2datlist(imput), orig_var = other, 
-                                     trafo_var = paste0(other, '_z'))
-    imput <- miceadds::datlist2mids(sampz) }
-
   for (e in expos) { cat(e,'... ')
 
     ze <- paste0(e,'_10_z')
@@ -201,7 +198,7 @@ for (sample in samples) {
                                                 add_covs=supp)) }
     # Other MRI outcomes
     if ('other' %in% outcs) { assign(paste0(e,'_other'),
-                                     exp_mod(ze, paste0(c('cortex','subcort','wmv','csf'),'_13_z'), 
+                                     exp_mod(ze, paste0(c('tiv','cortex','subcort','wmv','csf','ventrix'),'_13_z'), 
                                              add_covs=supp)) }
   }
   
@@ -256,6 +253,7 @@ for (sample in samples) {
                                        c('mfa_10','mfa_13'), c('mmd_10','mmd_13'),
                                        c('tiv_10','tiv_13'), c('wmv_10','wmv_13'),
                                        c('cortex_10','cortex_13'), c('subcort_10','subcort_13'),
+                                       c('ventrix_10','ventrix_13'),
                                        c('accumbens_10','accumbens_13'),
                                        c('amygdala_10', 'amygdala_13'),
                                        c('caudate_10', 'caudate_13'),
@@ -263,7 +261,7 @@ for (sample in samples) {
                                        c('pallidum_10', 'pallidum_13'),
                                        c('putamen_10', 'putamen_13'),
                                        c('thalamus_10','thalamus_13')),
-                        v.name=c('AGE','TBV','GMV','MFA','MMD','TIV','WMV','CRT','SBC',
+                        v.name=c('AGE','TBV','GMV','MFA','MMD','TIV','WMV','CRT','SBC','VNT',
                                  'ACC', 'AMY', 'CAU', 'HIP', 'PAL', 'PUT', 'THA'),
                         timevar='Visit',
                         direction='long')
@@ -290,7 +288,7 @@ for (sample in samples) {
           o,' ~ ',e,' (',adj,' model)','\n-----------------------------------------------------------------------\n')
       # Define covariates
       if (adj=='base') { covs2 <- '' # reduce covariates to base only
-      } else { covs2 <- '+ ethn_dich + bmi_10_z + m_educ_cont + m_age' }
+      } else { covs2 <- '+ ethn_dich + bmi_10_z + tot_educ_6 + m_age' }
       # Construct formula
       f = paste(o,'~ AGE *',e,covs1,covs2,'+ (1|IDC)')
       # fit the model
@@ -356,80 +354,7 @@ for (sample in samples) {
   
   modls_long <- list('imt_long' = imt_long, 'dis_long' = dis_long,'sbp_long' = sbp_long,'dbp_long' = dbp_long)
   openxlsx::write.xlsx(modls_long,
-                       file = file.path(respath, paste0('5-LongRes_visit_',sample,'_',date,'.xlsx')),
+                       file = file.path(respath, paste0('LongRes_',sample,'_',daterun,'.xlsx')),
                        overwrite = T)
   }
 }
-
-
-# --------------------------
-# covs1 <- '+ sex + height_10'
-# covs2 <- '+ ethn_dich + bmi_10_z + m_educ_cont + m_age'
-# 
-# d = read.csv('/Users/Serena/Desktop/arterial_brain/results_240523/Data_long_base9.csv')
-# 
-# sink('/Users/Serena/Desktop/arterial_brain/results_240523/longres_base9_noimp.txt')
-# for (e in paste0(c('imt','dis','sbp','dbp'),'_10_z')) {
-#   for (o in c('TBV', 'GMV', 'MFA', 'MMD','WMV','CRT','SBC',
-#               'ACC', 'AMY', 'CAU', 'HIP', 'PAL', 'PUT', 'THA')){
-#     cat('\n', e,'-',o,'------------------------------------------\n')
-#     f = paste(o,'~ AGE *',e,covs1,covs2,'+ (1|IDC)')
-#     
-#     m = lmerTest::lmer(as.formula(f), data=d)
-#     
-#     print(summary(m))
-#     
-#   }
-# }
-# sink()
-# Construct formula 
-# simple_slopes_list <- list()
-# sink(file.path(respath, paste0('5-SuppLongiResults_',date,'.txt')))
-# for (out in c('TIV','WMV','CRT','SBC')) {
-#   for (exp in paste0(c('imt','dis','sbp','dbp'),'_10_z')) {
-#     simple_slopes_list[[length(simple_slopes_list)+1]] <- fit_long(exp, out, adj='base')
-#     names(simple_slopes_list)[length(simple_slopes_list)] <- paste0(out,'-',exp,'-base')
-#     simple_slopes_list[[length(simple_slopes_list)+1]] <- fit_long(exp, out)
-#     names(simple_slopes_list)[length(simple_slopes_list)] <- paste0(out,'-',exp,'-full')
-#   }
-# }
-# sink()
-# openxlsx::write.xlsx(simple_slopes_list, file = file.path(respath, paste0('5-SuppSimpleSlopes_',date,'.xlsx')),overwrite = T)
-# 
-# # FDR correcion
-# fdrs_imt <- p.adjust(c(0.661,0.653, #TVB
-#                        0.510,0.506, #GMV
-#                        0.248,0.146, #FA and MD
-#                        0.032,0.025), method = 'fdr')
-# fdrs_dis <- p.adjust(c(0.883,0.854,
-#                        0.877,0.821,
-#                        0.232,0.262,
-#                        0.584,0.565), method = 'fdr')
-# fdrs_sbp <- p.adjust(c(0.007,0.030,
-#                        0.006,0.026,
-#                        0.065,0.148,
-#                        0.413,0.618), method = 'fdr')
-# fdrs_dbp <- p.adjust(c(0.032,0.059,
-#                        0.054,0.081,
-#                        0.580,0.923,
-#                        0.212,0.507), method = 'fdr')
-# # plot(fit)
-
-# ci <- function(beta, se) {
-#   cis = c('lower' = beta - (1.96 * se),
-#           'upper' = beta + (1.96 * se))
-#   return(cis)
-# } 
-# 
-# ci(-531.134, 195.946) # SBP - TBV (base)
-# ci(-402.584, 145.015) # SBP - GMV (base)\
-
-# library(ggeffects)
-# library(dplyr)
-# PlotSimple <- ggpredict(fit, terms = c('sbp_10_z', 'IDC'), type = 're') %>% #create a 'plot object', select the predictor variable (here: CN_GMC) and the clustering variable (here: Country)
-#   plot() +
-#   labs(x = 'sbp', y = 'j', title = 'Plot Skill Camp') + #name your axes and add a title (if you want to)
-#   scale_fill_manual(values = mycolors100) #specify that you want to use the expanded color palette that you just created (here: mycolors100)
-
-# ==============================================================================
-# ==============================================================================

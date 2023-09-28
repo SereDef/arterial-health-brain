@@ -8,7 +8,7 @@ invisible(lapply(c('foreign','dplyr','mice','miceadds'), require, character.only
 # Define paths 
 genrpath <- dirname(file.choose()) # <== choose project folder
 datapath <- file.path(genrpath,'DATA') # data folder
-respath  <- file.path(genrpath,'results_240523') # results folder
+respath  <- file.path(genrpath,'results_190923') # results folder
 
 date <- format(Sys.Date(), "%d%m%y")
 
@@ -128,18 +128,20 @@ data <- data.frame('IDC' = dataset$IDC,
             'subcort_10' = dataset$SubCortGrayVol_f09/1000, # in cm3
                 'wmv_10' = dataset$CerebralWhiteMatterVol_f09/1000, # in cm3
                 'csf_10' = dataset$CSF_vol_f09/1000, # in cm3
+            'ventrix_10' = rowSums(dataset[, grepl('Ventricle_vol_f09', names(dataset))], na.rm=FALSE)/1000, # in cm3
               'bstem_10' = dataset$Brain_Stem_vol_f09/1000, # in cm3
       'crbellum_cort_10' = dataset$Cerebellum_Cortex_vol_f09/1000, # in cm3
        'crbellum_wmv_10' = dataset$Cerebellum_White_Matter_vol_f09/1000, # in cm3
-         # 'mean_thick_10' = dataset$MeanThickness_f09/1000, # in cm3
+      #   'mean_thick_10' = dataset$MeanThickness_f09/1000, # in cm3
              'cortex_13' = dataset$CortexVol_f13/1000, # in cm3,
             'subcort_13' = dataset$SubCortGrayVol_f13/1000, # in cm3
                 'wmv_13' = dataset$CerebralWhiteMatterVol_f13/1000, # in cm3
                 'csf_13' = dataset$CSF_vol_f13/1000, # in cm3
+            'ventrix_13' = rowSums(dataset[, grepl('Ventricle_vol_f13', names(dataset))], na.rm=FALSE)/1000, # in cm3
               'bstem_13' = dataset$Brain_Stem_vol_f13/1000, # in cm3
       'crbellum_cort_13' = dataset$Cerebellum_Cortex_vol_f13/1000, # in cm3
        'crbellum_wmv_13' = dataset$Cerebellum_White_Matter_vol_f13/1000, # in cm3
-        #  'mean_thick_13' = dataset$MeanThickness_f13/1000, # in cm3
+       #  'mean_thick_13' = dataset$MeanThickness_f13/1000, # in cm3
           
               # ------ OTHER ------- #
        'm_bmi_prepregn' = dataset$BMI_0,   # self-reported Maternal BMI (used for imputation)
@@ -148,6 +150,7 @@ data <- data.frame('IDC' = dataset$IDC,
           'gest_weight' = dataset$WEIGHT,  # gestational weight (used for imputation)
          'm_educ_pregn' = dataset$EDUCM,   # maternal education pregnancy (used for imputation)
              'm_educ_3' = dataset$EDUCM3,  # maternal education @3 (used for imputation)
+             'p_educ_6' = dataset$EDUCP5,  # maternal education @3 (used for imputation)
              'income_6' = dataset$INCOME5, # household income @6 (used for imputation)
               'm_bmi_6' = dataset$BMIMotherF5, # measured (used for imputation)
                 'sbp_6' = dataset$MeanSBP_ex1_5child, # (used for imputation)
@@ -185,10 +188,10 @@ outcomes   <- comb_timepoints(c('tbv', 'gmv', 'mfa', 'mmd'))
 covariates <- c('sex', 'age_mri_13', 'height_10', 'ethnicity', 'bmi_10_z', 'm_educ_6', 'm_age')
 subc_vol   <- comb_timepoints(c('accumbens', 'amygdala', 'caudate', 'hippocampus', 'pallidum', 'putamen', 'thalamus'))
 wm_trcts   <- comb_timepoints(c('cgc_FA', 'cgc_MD', 'cst_FA', 'cst_MD', 'unc_FA', 'unc_MD', 'ilf_FA', 'ilf_MD', 'slf_FA', 'slf_MD', 'fma_FA', 'fma_MD', 'fmi_FA', 'fmi_MD'))
-othr_brain <- comb_timepoints(c('tiv','cortex','subcort','wmv')) #, 'csf','bstem','crbellum_cort','crbellum_wmv','mean_thick'))
+othr_brain <- comb_timepoints(c('tiv','cortex','subcort','wmv','ventrix','csf','bstem','crbellum_cort','crbellum_wmv')) # 'mean_thick'
 selection  <- c('visit_5','visit_10', comb_timepoints(c('mri_consent', 'mri_braces', 'mri_inc_find', 't1_scantype', 't1_qc', 'dti_scantype', 'dti_qc')))
 auxiliary  <- c('age_10','gest_weight','gest_age_birth','parity', 'm_bmi_prepregn', 'm_bmi_6','income_6','sbp_6','dbp_6','height_6', 'bmi_6_z',
-                'm_educ_pregn','m_educ_3','age_mri_10','m_ID', 'twin', othr_brain)
+                'm_educ_pregn','m_educ_3','p_educ_6','age_mri_10','m_ID', 'twin', othr_brain)
 
 write.csv(data, file.path(datapath, 'Data_dirty_brain.csv'))
 # ==============================================================================
@@ -209,8 +212,8 @@ clean_brain <- function(set) {
   }
   return(data)
 }
-data <- clean_brain(c('tbv_10','gmv_10','tbv_13','gmv_13',subc_vol, othr_brain))
-data <- clean_brain(c('mfa_10','mmd_10','mfa_13','mmd_13',wm_trcts))
+data <- clean_brain(c('tbv_10','gmv_10','tbv_13','gmv_13', subc_vol, othr_brain))
+data <- clean_brain(c('mfa_10','mmd_10','mfa_13','mmd_13', wm_trcts))
 
 # summary(data)
 # ==============================================================================
@@ -361,7 +364,7 @@ write.csv(miss, file.path(respath, paste0('0-miss_pattern_',date,'.csv')))
 # Create correlation matrix (full sample) --------------------------------------
 c <- round(cor(basesmp9[,-which(names(basesmp9) %in% c('IDC', selection, # binary and categorical
                                                      'sex','ethn_cont','twin','income_6',
-                                                     'm_educ_pregn','m_educ_3','m_educ_6'))], 
+                                                     'm_educ_pregn','m_educ_3','m_educ_6','p_educ_6'))], 
                use='pairwise.complete.obs'), 2)
 write.csv(c, file.path(respath, paste0('0-corr_matrix_base9_',date,'.csv')))
 
@@ -381,7 +384,11 @@ imp_rf <- futuremice(data, method = meth, m = 20, maxit = 40, ntree = 10, rfPack
 long.impdata <- complete(imp_rf, 'long', include = TRUE) %>%
   mutate(ethn_dich = if_else(ethn_cont %in% c('Dutch','Europe'), 'European', 'non-European')) %>%
   mutate(m_educ_cont = as.numeric(m_educ_6)) %>%
-  mutate(income_cat = as.factor(income_6))
+  mutate(p_educ_cont = as.numeric(p_educ_6)) %>%
+  mutate(educ_6 = m_educ_cont + p_educ_cont) %>%
+  mutate(income_cat = as.factor(income_6)) %>%
+  mutate(age_gap_13 = age_mri_13 - age_10) %>%
+  mutate(age_gap_10 = age_mri_10 - age_10)
 # Convert back to mids
 imp_rf <- as.mids(long.impdata)
 
@@ -393,7 +400,7 @@ postprocess <- function(inclusion, filename) {
   # Subset
   samp <- miceadds::subset_datlist(imp_rf, subset = imp_rf$data$IDC %in% inclusion)
   # Standardize
-  mains <- c(exposures, outcomes, subc_vol, wm_trcts)
+  mains <- c(exposures, outcomes, subc_vol, wm_trcts, othr_brain)
   sampz <- miceadds::scale_datlist(samp, orig_var = mains, trafo_var = paste0(mains, '_z'))
   sampimp <- miceadds::datlist2mids(sampz)
   # Save dataset
@@ -401,7 +408,7 @@ postprocess <- function(inclusion, filename) {
   
   # Save QC pdf 
   impqc <- function(dset, name) {
-    dir.create(file.path(respath,'QC-imputation'))
+    # dir.create(file.path(respath,'QC-imputation'))
     pdf(file.path(respath,'QC-imputation', paste0(name,'_',date,'.pdf')))
     for (v in names(data)) { if (nrow(dset$imp[[v]]) > 1) {
       print(densityplot(dset, as.formula(paste('~',v)))) }
